@@ -29,7 +29,8 @@ RUN pip3 install lxml python-libsbml-experimental beautifulsoup4 setuptools setu
 #    #make install && \
 #    cd .. && \
 #    rm -rf pyglpk
-RUN pip3 install glpk
+#RUN pip3 install glpk
+RUN pip3 install git+https://github.com/bradfordboyle/pyglpk
 
 # Download ModelSEED database and set environment variable
 RUN cd /data && git clone https://github.com/ModelSEED/ModelSEEDDatabase
