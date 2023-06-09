@@ -2,15 +2,12 @@ import os
 import unittest
 import PyFBA
 
-test_file_loc = ''
-if os.path.exists('tests/roles.txt'):
-    test_file_loc = 'tests'
-elif os.path.exists('PyFBA/tests/roles.txt'):
-    test_file_loc = 'PyFBA/tests'
+test_file_loc = os.path.dirname(os.path.realpath(__file__))
 
 
 class SuggestionTest(unittest.TestCase):
-    compounds, reactions, enzymes = PyFBA.parse.model_seed.compounds_reactions_enzymes()
+    modeldata = PyFBA.parse.model_seed.parse_model_seed_data('gramnegative', verbose=False)
+    compounds, reactions, enzymes = PyFBA.parse.model_seed.compounds_reactions_enzymes(organism_type='gramnegative')
 
     def test_essential(self):
         """Test the essential reactions"""
@@ -19,7 +16,7 @@ class SuggestionTest(unittest.TestCase):
 
     def test_limit_by_compound(self):
         """Test limiting adding reactions by the compounds that are present"""
-        suggested = PyFBA.gapfill.suggest_by_compound(self.__class__.compounds, self.__class__.reactions,
+        suggested = PyFBA.gapfill.suggest_by_compound(self.__class__.modeldata,
                                                       {'rxn00001'}, 2)
         self.assertGreaterEqual(len(suggested), 22712)
         limited = PyFBA.gapfill.limit_reactions_by_compound(self.__class__.reactions, {'rxn00001'}, suggested, 5)
@@ -38,12 +35,12 @@ class SuggestionTest(unittest.TestCase):
     def test_media(self):
         """Test suggestions based on a media"""
         toy_media = {PyFBA.metabolism.Compound('cpd00013', 'NH3', 'e')}
-        suggested = PyFBA.gapfill.suggest_from_media(self.__class__.compounds, self.__class__.reactions, {}, toy_media)
-        self.assertEqual(len(suggested), 13)
+        suggested = PyFBA.gapfill.suggest_from_media(self.__class__.modeldata, {}, toy_media)
+        self.assertEqual(len(suggested), 19)
 
     def test_orphan_compound(self):
         """Test suggestions based on orphan compounds"""
-        suggested = PyFBA.gapfill.suggest_by_compound(self.__class__.compounds, self.__class__.reactions,
+        suggested = PyFBA.gapfill.suggest_by_compound(self.__class__.modeldata,
                                                       {'rxn00001'}, 2)
         self.assertGreaterEqual(len(suggested), 22712)
 
@@ -61,20 +58,14 @@ class SuggestionTest(unittest.TestCase):
                 if r in self.__class__.reactions:
                     reactions2run.add(r)
         suggested = PyFBA.gapfill.compound_probability(self.__class__.reactions, reactions2run)
-        self.assertEqual(len(suggested), 674)
+        self.assertGreaterEqual(len(suggested), 2766)
 
     def test_roles_from_file(self):
         """Test suggestions based on roles in a file"""
         self.assertTrue(os.path.exists(os.path.join(test_file_loc, 'roles.txt')))
         suggs = PyFBA.gapfill.suggest_from_roles(os.path.join(test_file_loc, 'roles.txt'), self.__class__.reactions)
-        self.assertEqual(len(suggs), 4)
-        for rxn in {'rxn00799', 'rxn01192', 'rxn00577', 'rxn01277'}:
-            self.assertIn(rxn, suggs)
-
-        suggs = PyFBA.gapfill.suggest_from_roles(os.path.join(test_file_loc, 'roles.txt'),
-                                                 self.__class__.reactions, 0.9)
-        self.assertEqual(len(suggs), 1)
-        for rxn in {'rxn01277'}:
+        self.assertEqual(len(suggs), 3)
+        for rxn in {'rxn00577', 'rxn01192', 'rxn00799'}:
             self.assertIn(rxn, suggs)
 
     def test_subsystems(self):

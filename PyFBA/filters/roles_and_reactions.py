@@ -4,7 +4,7 @@ import PyFBA
 from PyFBA import log_and_message
 
 
-def reactions_to_roles(reaction_set, verbose=False):
+def reactions_to_roles(reaction_set, organism_type=None, verbose=False):
     """
     Convert between reactions and roles using the model seed data
 
@@ -12,12 +12,18 @@ def reactions_to_roles(reaction_set, verbose=False):
     roles in that reaction.
 
     :param reaction_set: A set of reaction IDs that we want to convert to roles
-    :type reaction_set: set
+    :type reaction_set: set[str]
     :param verbose: print error reporting
     :type verbose: bool
     :return: a hash of reaction ids and set of the associated roles
-    :rtype: dict of set of str
+    :rtype: dict[str, set(str)]
     """
+
+    if not organism_type:
+        log_and_message("WARNING: Organism type is not defined while gleaning the reactions. You should probably "
+                        "specify e.g. Gram_Negative, Gram_Positive, etc. We used microbial",
+                        stderr=verbose, loglevel="WARNING")
+        organism_type = 'microbial'
 
     if isinstance(reaction_set, list):
         reaction_set = set(reaction_set)
@@ -25,17 +31,16 @@ def reactions_to_roles(reaction_set, verbose=False):
         reaction_set = {reaction_set}
 
     # key is complex and value is all reactions
-    cmpxs = PyFBA.parse.model_seed.complexes()
-    # key is role and value is all complexes
-    roles = PyFBA.parse.model_seed.roles()
-
+    cmpxs = PyFBA.parse.model_seed.complexes(organism_type=organism_type, verbose=verbose)
     rct2cmpx = {}
     for c in cmpxs:
-        for r in cmpxs[c]:
-            if r not in rct2cmpx:
-                rct2cmpx[r] = set()
-            rct2cmpx[r].add(c)
+        for rxn in cmpxs[c]:
+            if rxn not in rct2cmpx:
+                rct2cmpx[rxn] = set()
+            rct2cmpx[rxn].add(c)
 
+    # key is role and value is all complexes
+    roles = PyFBA.parse.model_seed.roles(organism_type=organism_type, verbose=verbose)
     cmpx2role = {}
     for r in roles:
         for c in roles[r]:
@@ -47,7 +52,7 @@ def reactions_to_roles(reaction_set, verbose=False):
     for r in reaction_set:
         if r not in rct2cmpx:
             if verbose:
-                log_and_message(f"Converting role {r} to reaction: reaction not found", stderr=True)
+                log_and_message(f"Converting reaction {r} to role: reaction not found in model_seed complexes for organism_type={organism_type}", stderr=True)
             continue
         roles[r] = set()
         for c in rct2cmpx[r]:
@@ -80,25 +85,28 @@ def roles_to_reactions(roles, organism_type=None, verbose=False):
 
     if not organism_type:
         log_and_message("WARNING: Organism type is not defined while gleaning the reactions. You should probably "
-                        "specify e.g. Gram_Negative, Gram_Positive, etc")
+                        "specify e.g. Gram_Negative, Gram_Positive, etc. We used microbial",
+                        stderr=verbose, loglevel="WARNING")
+        organism_type = 'microbial'
     if isinstance(roles, list):
         roles = set(roles)
     elif isinstance(roles, str):
         roles = {roles}
 
     # key is complex and value is all reactions
-    cmpxs = PyFBA.parse.model_seed.complexes(organism_type=organism_type)
+    cmpxs = PyFBA.parse.model_seed.complexes(organism_type=organism_type, verbose=verbose)
     # key is role and value is all complexes
-    seedroles = PyFBA.parse.model_seed.roles(organism_type=organism_type)
+    seedroles = PyFBA.parse.model_seed.roles(organism_type=organism_type, verbose=verbose)
 
     rcts = {}
     for r in roles:
         # check to see if it is a multifunctional role
         if '; ' in r or ' / ' in r or ' @ ' in r:
-            sys.stderr.write("It seems that {} is a multifunctional role. You should separate the roles\n".format(r))
+            log_and_message(f"{r} is a multifunctional role. You should separate the roles", stderr=verbose)
         if r not in seedroles:
-            if verbose:
-                log_and_message(f"Role {r} is not a role we understand. Skipped", stderr=True)
+            # I don't think we should report all missed roles as likely to be many
+            # if verbose:
+            #    log_and_message(f"Role {r} is not a role we understand. Skipped", stderr=verbose)
             continue
 
         rcts[r] = set()
@@ -107,10 +115,10 @@ def roles_to_reactions(roles, organism_type=None, verbose=False):
                 if verbose:
                     # this occurs because there are reactions like cpx.1898 where we don't yet have a
                     # reaction for the complex
-                    sys.stderr.write("ERROR: " + c + " was not found in the complexes file, but is from a reaction\n")
+                    log_and_message(f"ERROR: {c} was not found in the complexes file, but is from a reaction",
+                                    stderr=verbose)
                 continue
-            for rc in cmpxs[c]:
-                rcts[r].add(rc)
+            rcts[r].update(cmpxs[c])
 
     return rcts
 

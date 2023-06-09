@@ -36,6 +36,8 @@ class Reaction:
     :ivar description: A description of the reaction
     :ivar equation: The reaction equation
     :ivar direction: The direction of the reaction (<, =, >, or ?)
+    :ivar gfdirection: The possible gapfilled direction
+    :ivar ntdirection: The non-template direction (before correcting for templates)
     :ivar left_compounds: A set of CompoundWithLocations on the left side of the reaction
     :ivar left_abundance: A dict of the CompoundWithLocations on the left and their abundance
     :ivar right_compounds: The set of CompoundWithLocations on the right side of the equation
@@ -76,6 +78,8 @@ class Reaction:
         self.description = description
         self.equation = equation
         self.direction = direction
+        self.gfdirection = direction # the gap filling direction
+        self.ntdirection = direction # the non-template driven direction
         self.left_compounds = set()  # type: set[PyFBA.metabolism.CompoundWithLocation]
         self.left_abundance = {}
         self.right_compounds = set()  # type: set[PyFBA.metabolism.CompoundWithLocation]
@@ -98,6 +102,7 @@ class Reaction:
         self.is_gapfilled = False
         self.gapfill_method = ""
         self.is_uptake_secretion = False
+        self.aliases = []
 
     def __eq__(self, other):
         """
@@ -165,8 +170,66 @@ class Reaction:
         The string version of the reaction.
         :rtype: str
         """
+        if self.readable_name:
+            return f"{self.id}: {self.readable_name}"
+        else:
+            return f"{self.id}: {self.equation}"
 
-        return f"{self.id}: {self.readable_name}"
+    """
+        Since we have complex data structures, we can't just pickle them and unpickle them with aplomb!
+        In fact, this is affecting deep/shallow copy, and we need to ensure that we use copy.deepcopy() 
+        at all times, otherwise the data structures are not copied correctly.
+        
+        These two methods correctly allow us to pickle the data structures. Note that we have
+        CompoundWithLocation objects, and we need both the object and its abundance to correctly create the pickle.
+    """
+
+    def __getstate__(self):
+        """
+        The state that the object is saved or copied as. We override the left/right compounds and abundances
+        with simple arrays of data. This is lossy - we are losing the connections between compounds and data
+        and we probably need to reconstruct that after pickling/unpickling the reactions.
+        :return:
+        """
+        state = self.__dict__.copy()
+        state['left_compounds'] = []
+        state['right_compounds'] = []
+        state['left_abundance'] = {}
+        state['right_abundance'] = {}
+        for l in self.left_compounds:
+            state['left_compounds'].append([l.id, l.name, l.location])
+            state['left_abundance'][f"{l.id} :: {l.name} :: {l.location}"] = self.left_abundance[l]
+        for r in self.right_compounds:
+            state['right_compounds'].append([r.id, r.name, r.location])
+            state['right_abundance'][f"{r.id} :: {r.name} :: {r.location}"] = self.right_abundance[r]
+        return state
+
+
+    def __setstate__(self, state):
+        """
+        Create a new reaction from a saved state. This is from __getstate__ eg. when pickled.
+        :param state: the state that was saved.
+        :return:
+        """
+        left = set()
+        right = set()
+        left_abundance = {}
+        right_abundance = {}
+        for l in state['left_compounds']:
+            c = PyFBA.metabolism.CompoundWithLocation(id=l[0], name=l[1], location=l[2])
+            left.add(c)
+            left_abundance[c] = state['left_abundance'][f"{l[0]} :: {l[1]} :: {l[2]}"]
+        state['left_compounds'] = left
+        state['left_abundance'] = left_abundance
+        for r in state['right_compounds']:
+            c = PyFBA.metabolism.CompoundWithLocation(id=r[0], name=r[1], location=r[2])
+            right.add(c)
+            right_abundance[c] = state['right_abundance'][f"{r[0]} :: {r[1]} :: {r[2]}"]
+        state['right_compounds'] = right
+        state['right_abundance'] = right_abundance
+        self.__dict__.update(state)
+
+
 
     def set_direction(self, direction):
         """
@@ -181,6 +244,8 @@ class Reaction:
         allowable_directions = {'>', '<', '=', None}
         if direction in allowable_directions:
             self.direction = direction
+            if not self.gfdirection:
+                self.gfdirection = direction
         else:
             sys.stderr.write("Direction: " + str(direction) + " is not a permitted direction. Ignored\n")
             self.direction = None
@@ -197,7 +262,7 @@ class Reaction:
         if isinstance(cmpds, set):
             # choose one element. next(iter(cmpds)) does not remove the element
             if not isinstance(next(iter(cmpds)), PyFBA.metabolism.CompoundWithLocation):
-                raise TypeError("Starting with v.2 reactions need PyFBA.metabolism.CompoundWithLocation objects")
+                raise TypeError(f"Starting with v.2 reactions need PyFBA.metabolism.CompoundWithLocation objects not {type(next(iter(cmpds)))}")
             self.left_compounds.update(cmpds)
         elif isinstance(cmpds, PyFBA.metabolism.CompoundWithLocation):
             # add a single compound
@@ -237,7 +302,7 @@ class Reaction:
         if cmpd in self.left_abundance:
             return self.left_abundance[cmpd]
         else:
-            raise KeyError(f"In the reaction {self.readable_name}, you do not have" +
+            raise KeyError(f"In the reaction {self.readable_name} (reaction id: {self.id}), you do not have" +
                            f" {cmpd} on the left hand side of the equation: {self.equation}")
 
     def number_of_left_compounds(self):
@@ -297,7 +362,7 @@ class Reaction:
         if cmpd in self.right_abundance:
             return self.right_abundance[cmpd]
         else:
-            raise KeyError(f"In the reaction {self.readable_name}, you do not have" +
+            raise KeyError(f"In the reaction {self.readable_name} (reaction id: {self.id}), you do not have" +
                            f" {cmpd} on the right hand side of the equation: {self.equation}")
 
     def number_of_right_compounds(self):
@@ -550,6 +615,17 @@ class Reaction:
         elif self.direction == '<':
             self.direction = '>'
 
+        # we only need to reverse two gfdirections
+        if self.gfdirection == '>':
+            self.gfdirection = '<'
+        elif self.gfdirection == '<':
+            self.gfdirection = '>'
+
+        if self.lower_bound != None and self.upper_bound != None:
+            lbtemp = 0 - self.lower_bound
+            self.lower_bound = 0 - self.upper_bound
+            self.upper_bound = lbtemp
+
         (self.pLR, self.pRL) = (self.pRL, self.pLR)
         self.deltaG = -self.deltaG
 
@@ -564,3 +640,12 @@ class Reaction:
         Retrieve an attribute
         """
         return getattr(self, key)
+
+    def reset_bounds(self):
+        """
+        reset the bounds of this reaction. If we are using this in gapfilling, we need to reset the bounds
+        so we can calculate appropriately.
+        :return: None
+        """
+        self.lower_bound = None
+        self.upper_bound = None

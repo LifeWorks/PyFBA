@@ -2,7 +2,7 @@
 """
 
 Please note that this is the historic version, and now we have moved to parsing the JSON
-files directly. See model_seed.py
+files directly. See model_data.py
 
 A parser for the SEED biochemistry modules that are available on Github
 at https://github.com/ModelSEED/ModelSEEDDatabase. We have also included
@@ -22,7 +22,6 @@ import io
 
 import PyFBA
 from .model_seed import location
-from .config import MODELSEED_DIR
 
 def template_reactions(modeltype='microbial'):
     """

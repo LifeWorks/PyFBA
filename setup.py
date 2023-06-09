@@ -18,7 +18,7 @@ def read(*filenames, **kwargs):
             buf.append(f.read())
     return sep.join(buf)
 
-long_description = read('README.txt', 'CHANGES.txt')
+long_description = read('README.txt')
 
 def get_version():
     with open("VERSION", 'r') as f:
@@ -51,9 +51,13 @@ setup(
     long_description=long_description,
     platforms='any',
     install_requires=[
-        "lxml",
-        "python-libsbml",
         "beautifulsoup4",
+        "jupyter",
+        "lxml",
+        "nose",
+        "python-libsbml",
+        'importlib_resources; python_version < "3.7"',
+        'glpk'
     ],
     test_suite = 'nose.collector',
     description='A Python implementation of flux balance analysis',
@@ -71,6 +75,12 @@ setup(
         'Programming Language :: Python :: 2.7',
         'Programming Language :: Python :: 3.0',
         'Topic :: Scientific/Engineering :: Bio-Informatics',
-    ]
+    ],
+    entry_points={
+        "console_scripts": ["pyfba = PyFBA.cmd.entry:run"]
+    },
+    use_scm_version=True,
+    setup_requires=['setuptools_scm'],
+    zip_safe=True
 )
 

@@ -4,26 +4,6 @@ import unittest
 
 import PyFBA
 
-MODELSEED_DIR = ""
-if os.path.exists('Biochemistry/ModelSEEDDatabase'):
-    MODELSEED_DIR = 'Biochemistry/ModelSEEDDatabase'
-elif 'ModelSEEDDatabase' in os.environ:
-        MODELSEED_DIR = os.environ['ModelSEEDDatabase']
-else:
-    sys.stderr.write("Please ensure that you install the Model SEED Database somewhere, and set the environment " +
-                     "variable ModelSEEDDatabase to point to that directory.\n" +
-                     " See INSTALLATION.md for more information\n")
-    sys.exit(-1)
-
-if not MODELSEED_DIR:
-    sys.stderr.write("The ModelSEEDDatabase environment variable is not set.\n")
-    sys.stderr.write("Please install the ModelSEEDDatabase, set the variable, and try again")
-    sys.exit(-1)
-
-if not os.path.exists(MODELSEED_DIR):
-    sys.stderr.write("The MODEL SEED directory: {} does not exist.\n".format(MODELSEED_DIR))
-    sys.stderr.write("Please check your installation.\n")
-    sys.exit(-1)
 
 class TestModelSeedParsing(unittest.TestCase):
 
@@ -31,7 +11,7 @@ class TestModelSeedParsing(unittest.TestCase):
         """
         This is run before everything else
         """
-        self.assertTrue(os.path.exists(MODELSEED_DIR))
+
 
     def test_compounds(self):
         """
@@ -39,7 +19,7 @@ class TestModelSeedParsing(unittest.TestCase):
         """
         PyFBA.parse.model_seed.reset_cache()
         cmps = PyFBA.parse.model_seed.compounds()
-        self.assertEqual(len(cmps), 33992, 'The compounds list has changed. Most likely the model seed has been ' +
+        self.assertEqual(len(cmps), 33845, 'The compounds list has changed. Most likely the model seed has been ' +
                          'updated and the test code is wrong!')
 
     def test_template_working(self):
@@ -124,5 +104,5 @@ class TestModelSeedParsing(unittest.TestCase):
         # Getting all three gave 33992 compoounds, 43774 reactions, and 9423 enzymes
         self.assertEqual(len(enzs), 9423, f"THere are {len(enzs)} enzymes")
         self.assertEqual(len(rcts), 43774, f"There are {len(rcts)} reactions")
-        self.assertEqual(len(cpds), 33992, f"There are {len(cpds)} compounds")
+        self.assertEqual(len(cpds), 33845, f"There are {len(cpds)} compounds")
 

@@ -1,5 +1,5 @@
 from functools import total_ordering
-
+import sys
 from PyFBA import log_and_message
 
 COMMON_REACTION_LIMIT = 5
@@ -36,11 +36,18 @@ class Compound:
         :rtype:
         """
         self.id = cpd_id
+
+        if name.lower() == 'fe2' or name.lower() == 'fe+2' or name == 'fe2+':
+            log_and_message(f"Warning: {name} is deprecated. We changed {cpd_id} {name} to {cpd_id} Fe2+", stderr=verbose)
+            name = 'Fe2+'
+
+        if name.lower() == 'fe3' or name == 'fe3+' or name.lower() == 'fe+3':
+            log_and_message(f"Warning: {name} is deprecated. We changed {name} to Fe3+", stderr=verbose)
+            name = 'Fe3+'
+        elif 'fe3' in name.lower() and verbose:
+            log_and_message(f"Warning: {name} might be deprecated, we prefer Fe3+", stderr=verbose)
+
         self.name = name
-        if verbose and 'fe2' in name.lower():
-            log_and_message(f"Warning: Fe2 is deprecated. Please use Fe+2 for the name in compound {name}", stderr=True)
-        if verbose and 'fe3' in name.lower():
-            log_and_message(f"Warning: Fe3 is deprecated. Please use Fe+2 for the name in compound {name}", stderr=True)
         self.reactions = set()
         self.model_seed_id = self.id
         self.alternate_seed_ids = set()
@@ -161,7 +168,7 @@ class Compound:
         """
         Return a set of all the reactions that this compound is involved in
 
-        :rtype: int
+        :rtype: Set[str]
         """
         return self.reactions
 
@@ -222,7 +229,7 @@ class CompoundWithLocation(Compound):
     :ivar location: the location of the compound.
     """
 
-    def __init__(self, cpid, cpname, location):
+    def __init__(self, id=None, name=None, location=None, *args, **kwargs):
         """
         Initiate the object
 
@@ -233,7 +240,9 @@ class CompoundWithLocation(Compound):
         :return:
         :rtype:
         """
-        super().__init__(cpid, cpname)
+        super(CompoundWithLocation, self).__init__(id, name, *args, **kwargs)
+        self.id = id
+        self.name = name
         self.location = location
 
     @classmethod
@@ -255,7 +264,7 @@ class CompoundWithLocation(Compound):
         :rtype: bool
         """
         if isinstance(other, CompoundWithLocation):
-            return self.id == other.id or (self.name, self.location) == (other.name, other.location)
+            return super().__eq__(other) and self.location == other.location
         else:
             raise NotImplementedError(f"Comparing a Compound with {type(other)} has not been implemented")
 
@@ -304,7 +313,8 @@ class CompoundWithLocation(Compound):
 
         :rtype: int
         """
-        return hash((self.id, self.name, self.location))
+        return hash((super().__hash__(), self.location))
+
 
     def __str__(self):
         """
@@ -312,6 +322,18 @@ class CompoundWithLocation(Compound):
         :rtype: str
         """
         return f"{self.id}: {self.name} (location: {self.location})"
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        # sys.stderr.write(f"Set {state}\n")
+        return state
+
+
+    def __setstate__(self, state):
+        # correctly handle unpickling
+        # sys.stderr.write(f"Read {state}\n")
+        self.__dict__.update(state)
+
 
     def calculate_molecular_weight(self):
         # this is here because the subclass should implement unimplemented methods otherwise it is abstract

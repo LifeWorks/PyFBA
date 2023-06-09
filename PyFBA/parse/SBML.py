@@ -7,6 +7,7 @@ from bs4 import BeautifulSoup
 import PyFBA
 from PyFBA import log_and_message
 
+
 class SBML:
     """A SBML object representing the model data.
 
@@ -24,6 +25,9 @@ class SBML:
         self.compounds = set()
         self.compounds_by_id = {}
         self.compounds_by_name = {}
+        self.compounds_by_id_loc = {}
+        self.compounds_by_name_loc = {}
+        self.compounds_by_id_loc = {}
         self.model_id = ""
         self.model_name = ""
         self.compartment = {}
@@ -36,11 +40,14 @@ class SBML:
         :return: None
         :rtype: None
         """
-        # we just store these based on the compound, then we don't worry about location, etc.
-        # The hash takes care of that
+
         self.compounds.add(cpd)
-        self.compounds_by_id[cpd.id] = cpd
-        self.compounds_by_name[cpd.name] = cpd
+        if cpd.id not in self.compounds_by_id:
+            self.compounds_by_id[cpd.id] = set()
+        if cpd.name not in self.compounds_by_name:
+            self.compounds_by_name[cpd.name] = set()
+        self.compounds_by_id[cpd.id].add(cpd)
+        self.compounds_by_name[cpd.name].add(cpd)
 
     def get_all_compounds(self):
         """
@@ -60,8 +67,9 @@ class SBML:
         """
 
         if cpdid in self.compounds_by_id:
-            return self.compounds_by_id[cpdid]
-        raise ValueError(cpdid + " is not present in the model")
+            return next(iter(self.compounds_by_id[cpdid]))
+        # raise ValueError(cpdid + " is not present in the model")
+        return None
 
     def get_a_compound_by_name(self, name) -> PyFBA.metabolism.CompoundWithLocation:
         """
@@ -73,9 +81,45 @@ class SBML:
         """
 
         if name in self.compounds_by_name:
-            return self.compounds_by_name[name]
-        raise ValueError(name + " is not present in the model")
+            return next(iter(self.compounds_by_name[name]))
+        # raise ValueError(name + " is not present in the model")
+        return None
 
+    def get_a_compound_by_id_and_loc(self, cpdid, loc) -> PyFBA.metabolism.CompoundWithLocation:
+        """
+        Get a single compound by the id of the compound
+        :param cpdid: compound id
+        :type cpdid: str
+        :param loc: the location
+        :type loc: str
+        :return: The compound from the model
+        :rtype: PyFBA.metabolism.CompoundWithLocation
+        """
+
+        if cpdid in self.compounds_by_id:
+            for c in self.compounds_by_id[cpdid]:
+                if c.location == loc:
+                    return c
+        # raise ValueError(f"{cpdid} with location {loc} is not present in the model")
+        return None
+
+    def get_a_compound_by_name_and_loc(self, name, loc) -> PyFBA.metabolism.CompoundWithLocation:
+        """
+        Get a single compound by its name
+        :param name: the name of the compount
+        :type name: str
+        :param loc: the location
+        :type loc: str
+        :return: the compound object
+        :rtype: PyFBA.metabolism.CompoundWithLocation
+        """
+
+        if name in self.compounds_by_name:
+            for c in self.compounds_by_name[name]:
+                if c.location == loc:
+                    return c
+        # raise ValueError(f"{name} with location {loc} is not present in the model")
+        return None
 
     def add_reaction(self, rxn):
         """
@@ -86,7 +130,6 @@ class SBML:
         :rtype: None
         """
         self.reactions[rxn.id] = rxn
-
 
     def get_all_reactions(self):
         """
@@ -99,18 +142,16 @@ class SBML:
     def get_a_reaction(self, rid):
         """
         Get a single reaction with the same id as the one provided
-        :param rxn: The reaction to retrieve
-        :type rxn: object.
+        :param rid: The reaction to retrieve
+        :type rid: object.
         :return: The reaction object
         :rtype: Reaction
-
         """
 
         if rid in self.reactions:
             return self.reactions[rid]
         else:
             raise ValueError(f"{rid} is not present in the model")
-
 
     def correct_media(self, media):
         """
@@ -122,34 +163,47 @@ class SBML:
         :rtype: set(PyFBA.metabolism.CompoundWithLocation)
         """
 
-        newmedia = set()
+        new_media = set()
         warned_compounds = False
         for m in media:
-            if m.id == 'cpd00018':
-                sys.stderr.write(f"Found {m} at 1\n")
-            if m.name in self.compounds_by_name:
-                media_component = copy.copy(self.compounds_by_name[m.name])
-                media_component.location = 'e'
-                newmedia.add(media_component)
+            comp = self.get_a_compound_by_name_and_loc(m.name, 'e')
+            if comp:
+                new_media.add(comp)
+                continue
+
+            comp = self.get_a_compound_by_name(m.name)
+            if comp:
+                media_component = PyFBA.metabolism.CompoundWithLocation.from_compound(comp, 'e')
+                new_media.add(media_component)
                 continue
 
             testname = m.name.replace('-', '_')
-            if testname in self.compounds_by_name:
-                media_component = copy.copy(self.compounds_by_name[testname])
-                media_component.location = 'e'
-                newmedia.add(media_component)
+            comp = self.get_a_compound_by_name_and_loc(testname, 'e')
+            if comp:
+                new_media.add(self.get_a_compound_by_name_and_loc(testname, 'e'))
+                continue
+
+            comp = self.get_a_compound_by_name(testname)
+            if comp:
+                media_component = PyFBA.metabolism.CompoundWithLocation.from_compound(comp, 'e')
+                new_media.add(media_component)
                 continue
 
             testname = m.name.replace('+', '')
-            if testname in self.compounds_by_name:
-                media_component = copy.copy(self.compounds_by_name[testname])
-                media_component.location = 'e'
-                newmedia.add(media_component)
+            comp = self.get_a_compound_by_name_and_loc(testname, 'e')
+            if comp:
+                new_media.add(self.get_a_compound_by_name_and_loc(testname, 'e'))
+                continue
+
+            comp = self.get_a_compound_by_name(testname)
+            if comp:
+                media_component = PyFBA.metabolism.CompoundWithLocation.from_compound(comp, 'e')
+                new_media.add(media_component)
                 continue
 
             log_and_message(f"Checking media compounds: Our compounds do not include  {m.name}", stderr=True)
             warned_compounds = True
-            newmedia.add(m)
+            new_media.add(m)
 
         if warned_compounds:
             log_and_message("""
@@ -157,7 +211,7 @@ Please note: The warnings about media not being found in compounds are not fatal
 It just means that we did not find that compound anywhere in the reactions, and so it is unlikely to be
 needed or used. We typically see a few of these in rich media. 
             """, stderr=True)
-        return newmedia
+        return new_media
 
 
 def parse_sbml_file(sbml_file, verbose=False):
@@ -181,15 +235,23 @@ def parse_sbml_file(sbml_file, verbose=False):
 
     # parse the compartments
     for c in soup.listOfCompartments.find_all('compartment'):
-        sbml.compartment[c['id']] = c['name']
+        if 'name' in c:
+            sbml.compartment[c['id']] = c['name']
+        else:
+            sbml.compartment[c['id']] = c['id']
 
     # add the compounds
     for s in soup.listOfSpecies.find_all('species'):
         cpdid = s['id'].replace('_c0', '').replace('_e0', '')
-        #cpdid = s['id'].replace('_c0', '').replace('_e0', '').replace("_b", '')
-        cpd = PyFBA.metabolism.CompoundWithLocation(cpdid,
-                                        s['name'].replace('_c0', '').replace('_e0', ''),
-                                        s['compartment'].replace('0', ''))
+        cpdname = s['name'].replace('_c0', '').replace('_e0', '')
+        cpdloc = s['compartment'].replace('0', '')
+        if cpdid.startswith('M_'):
+            cpdid = cpdid.replace('M_', "")
+        if '_b' in cpdid:
+            cpdloc = 'b'
+            cpdid = cpdid.replace('_b', '')
+            cpdname = cpdname.replace('_b', '')
+        cpd = PyFBA.metabolism.CompoundWithLocation(cpdid, cpdname, cpdloc)
         cpd.abbreviation = s['id']
         cpd.model_seed_id = cpdid
         cpd.charge = s['charge']
@@ -205,8 +267,6 @@ def parse_sbml_file(sbml_file, verbose=False):
 
     # add the reactions
     for r in soup.listOfReactions.find_all('reaction'):
-        # I am going to split off the location for the reaction.
-        # I don't believe we have the same reaction running in two different locations but maybe in plants, etc?
         if 'biomass' in r['id'].lower():
             rxnid = 'biomass_equation'
         elif '_' not in r['id']:
@@ -216,10 +276,12 @@ def parse_sbml_file(sbml_file, verbose=False):
         elif r['id'].startswith('EX_'):
             ex, rxnid, rxnloc = r['id'].split("_")
             rxnid = 'EX_' + rxnid
+        elif r['id'].startswith('R_'):
+            ex, rxnid, rxnloc = r['id'].split("_")
         else:
             try:
                 rxnid, rxnloc = r['id'].split("_")
-            except IndexError:
+            except (ValueError, IndexError):
                 if verbose:
                     sys.stderr.write("ERROR: Can't unpack " + r['id'] + "\n")
                 continue
@@ -227,8 +289,7 @@ def parse_sbml_file(sbml_file, verbose=False):
         rxn = PyFBA.metabolism.Reaction(rxnid)
 
         if rxn in sbml.get_all_reactions():
-            #if verbose:
-            sys.stderr.write("Already found reaction: " + str(rxn) + " ... not overwriting\n")
+            log_and_message("Already found reaction: {rxn} ... not overwriting", stderr=verbose)
             continue
         rxn.readable_name = r['name']
         if rxnid == 'biomass_equation':
@@ -248,20 +309,31 @@ def parse_sbml_file(sbml_file, verbose=False):
         for rp in ['listOfReactants', 'listOfProducts']:
             for rc in r.find_all(rp):
                 for sp in rc.find_all('speciesReference'):
-                    cpdid, cpdloc = sp['species'].split("_")
+                    if sp['species'].startswith('M_'):
+                        m, cpdid, cpdloc = sp['species'].split("_")
+                    else:
+                        cpdid, cpdloc = sp['species'].split("_")
+                    cpdloc = cpdloc.replace('0', '')
+
                     try:
-                        cpd = sbml.get_a_compound_by_id(cpdid)
+                        cpd = copy.deepcopy(sbml.get_a_compound_by_id_and_loc(cpdid, cpdloc))
                     except ValueError:
                         # the compound is not in the model (but it should be!)
                         count += 1
                         cpd = PyFBA.metabolism.CompoundWithLocation(f"smbl{count}", cpdid, cpdloc)
-                        if verbose:
-                            log_and_message(
-                                f"WARNING: {cpdid} loc: {cpdloc} is supposed to be in the model but is not. Added\n",
-                                c = "RED",
-                                stderr=True
-                            )
+                        log_and_message(
+                            f"WARNING: {cpdid} loc: {cpdloc} is supposed to be in the model but is not. Added\n",
+                            c="RED",
+                            stderr=verbose
+                        )
                         sbml.add_compound(cpd)
+
+                    if isinstance(cpd, PyFBA.metabolism.CompoundWithLocation):
+                        cpd.location = cpdloc
+                    elif isinstance(cpd, PyFBA.metabolism.Compound):
+                        cpd = PyFBA.metabolism.CompoundWithLocation.from_compound(cpd, cpdloc)
+                    else:
+                        log_and_message(f"ERROR: {cpd} is neither Compound nor CompoundWithLocation", stderr=verbose)
 
                     if cpd.uptake_secretion:
                         rxn.is_uptake_secretion = True
@@ -287,68 +359,11 @@ def parse_sbml_file(sbml_file, verbose=False):
         sbml.add_reaction(rxn)
 
     log_and_message(f"Parsing the model {sbml.model_name} (id {sbml.model_id}) is complete.")
-    log_and_message(f"Parsing the SBML file: We found " +
-                    f"{len(sbml.compounds)}/{len(sbml.compounds_by_id)}/{len(sbml.compounds_by_name)} compounds"
-                    f" (total, by ID, by name -> These three numbers should be the same!)")
+    log_and_message(f"Parsing the SBML file: We found {len(sbml.compounds)} compounds")
     log_and_message(f"Parsing the SBML file: We found {len(sbml.reactions)} reactions")
 
     return sbml
 
-
-def correct_media_names(media, cpds):
-    """
-    Correct the names in media files so they match names in the SBML files. Basically replacing '-' with '_'
-    or '+' with ' '
-
-    :param cpds: A set of compounds that are in the model
-    :type cpds: set
-    :param media: A set of compounds that define the media
-    :type media: set
-    :return: A new media set with corrected names
-    :rtype: set
-    """
-
-    # correct some of the media names so that they match the compounds in the
-    # SBML file. This is why we should use compound IDs and not names!
-    newmedia = set()
-    compounds_by_name = {c.name: c for c in cpds}
-    warned_compounds = False
-    for m in media:
-        if m.name in compounds_by_name:
-            media_component = compounds_by_name[m.name]
-            media_component.location = 'e'
-            newmedia.add(media_component)
-            log_and_message(f"Found media component {media_component}\n", "GREEN", stdout=True)
-            continue
-
-        testname = m.name.replace('-', '_')
-        if testname in compounds_by_name:
-            media_component = compounds_by_name[testname]
-            media_component.location = 'e'
-            newmedia.add(media_component)
-            log_and_message(f"Found media component {media_component}\n", "GREEN", stdout=True)
-            continue
-
-
-        testname = m.name.replace('+', '')
-        if testname in compounds_by_name:
-            media_component = compounds_by_name[testname]
-            media_component.location = 'e'
-            newmedia.add(media_component)
-            log_and_message(f"Found media component {media_component}\n", "GREEN", stdout=True)
-            continue
-
-        log_and_message(f"Checking media compounds: Our compounds do not include  {m.name}", stderr=True)
-        warned_compounds = True
-        newmedia.add(m)
-
-    if warned_compounds:
-        log_and_message("""
-Please note: The warnings about media not being found in compounds are not fatal.
-It just means that we did not find that compound anywhere in the reactions, and so it is unlikely to be
-needed or used. We typically see a few of these in rich media. 
-        """, stderr=True)
-    return newmedia
 
 
 if __name__ == "__main__":

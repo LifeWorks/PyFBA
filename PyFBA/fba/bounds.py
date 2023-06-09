@@ -1,9 +1,9 @@
 import sys
 
-from PyFBA import lp
+from PyFBA import lp, log_and_message
 
 
-def reaction_bounds(reactions, reactions_to_run, media, lower=-1000.0, mid=0.0, upper=1000.0, verbose=False):
+def reaction_bounds(reactions, reactions_with_upsr, media, lower=-1000.0, mid=0.0, upper=1000.0, verbose=False):
     """
     Set the bounds for each reaction. We set the reactions to run between
     either lower/mid, mid/upper, or lower/upper depending on whether the
@@ -11,8 +11,8 @@ def reaction_bounds(reactions, reactions_to_run, media, lower=-1000.0, mid=0.0, 
 
     :param reactions: The dict of all reactions we know about
     :type reactions: dict of metabolism.Reaction
-    :param reactions_to_run: The sorted list of reactions to run
-    :type reactions_to_run: set
+    :param reactions_with_upsr: The sorted list of reactions to run
+    :type reactions_with_upsr: set
     :param media: The media compounds
     :type media: set
     :param lower: The default lower bound
@@ -23,27 +23,38 @@ def reaction_bounds(reactions, reactions_to_run, media, lower=-1000.0, mid=0.0, 
     :type upper: float
     :return: A dict of the reaction ID and the tuple of bounds
     :rtype: dict
-
     """
 
     rbvals = {}
     media_uptake_secretion_count = 0
     other_uptake_secretion_count = 0
-    for r in reactions_to_run:
-        # if we already know the bounds, eg from an SBML file
-        if r is not 'BIOMASS_EQN' and reactions[r].lower_bound is not None and reactions[r].upper_bound is not None:
+    for r in reactions_with_upsr:
+        if r == 'BIOMASS_EQN':
+            rbvals[r] = (mid, upper)
+            continue
+
+        # if we already know the bounds, eg from an SBML file or from our uptake/secretion reactions
+        if reactions[r].lower_bound != None and reactions[r].upper_bound != None:
             rbvals[r] = (reactions[r].lower_bound, reactions[r].upper_bound)
             continue
+
         if r in reactions:
             direction = reactions[r].direction
-        elif r == 'BIOMASS_EQN':
-            direction = '>'
         else:
             sys.stderr.write("Did not find {} in reactions\n".format(r))
             direction = "="
 
-        # this is where we define whether our media has the components
-        if r != 'BIOMASS_EQN' and (reactions[r].is_uptake_secretion or reactions[r].is_transport):
+        """
+        RAE 16/6/21
+        We no longer use this block to check for media components. Instead, we us the uptake_and_secretion_reactions
+        in external_reactions.py to do so.
+        
+        We assume that if you provide uptake_and_secretion_reactions you have already culled them for the media, though
+        perhaps we should add a test for that.
+        
+        """
+
+        if False and (reactions[r].is_uptake_secretion or reactions[r].is_transport or reactions[r].is_input_reaction()):
             in_media = False
             override = False # if we have external compounds that are not in the media, we don't want to run this as a media reaction
             for c in reactions[r].left_compounds:
@@ -53,15 +64,18 @@ def reaction_bounds(reactions, reactions_to_run, media, lower=-1000.0, mid=0.0, 
                     else:
                         override = True
             # in this case, we have some external compounds that we should not import.
-            # for example,
+            # for example, H+ is used to translocate things
             if override:
                 in_media = False
 
             if in_media:
+                # This is what I think it should be:
                 rbvals[r] = (lower, upper)
+                #rbvals[r] = (0.0, upper)
                 media_uptake_secretion_count += 1
             else:
                 rbvals[r] = (0.0, upper)
+                #rbvals[r] = (lower, upper)
                 other_uptake_secretion_count += 1
             continue
 
@@ -85,7 +99,11 @@ def reaction_bounds(reactions, reactions_to_run, media, lower=-1000.0, mid=0.0, 
         sys.stderr.write("In parsing the bounds we found {} media uptake ".format(media_uptake_secretion_count) +
                          "and secretion reactions and {} other u/s reactions\n".format(other_uptake_secretion_count))
 
-    rbounds = [rbvals[r] for r in reactions_to_run]
+    rbounds = [rbvals[r] for r in reactions_with_upsr]
+    for r in reactions_with_upsr:
+        if r in reactions:
+            reactions[r].lower_bound, reactions[r].upper_bound = rbvals[r]
+
     lp.col_bounds(rbounds)
     return rbvals
 

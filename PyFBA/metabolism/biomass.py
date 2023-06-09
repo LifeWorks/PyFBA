@@ -1,7 +1,7 @@
 import sys
+import PyFBA
 from .compound import CompoundWithLocation
 from .reaction import Reaction
-
 
 def standard_eqn():
     """The standard biomass_equation equation is derived from the SBML file
@@ -36,7 +36,7 @@ def kbase():
     :rtype: dict, dict
     """
     reactants = {'GTP': 0.135406821203723, 'L-Aspartate': 0.200830806928348, 'L-Methionine': 0.127801422590767,
-                 'CTP': 0.0841036156544863, 'NAD': 0.00309646685192537, 'fe3': 0.00309646685192537,
+                 'CTP': 0.0841036156544863, 'NAD': 0.00309646685192537, 'Fe3+': 0.00309646685192537,
                  'K+': 0.00309646685192537, 'DNA replication': 1.0, 'Sulfate': 0.00309646685192537,
                  'dATP': 0.0145080770930701, 'Ubiquinone-8': 0.00309646685192537, 'ACP': 0.00309646685192537,
                  'Mn2+': 0.00309646685192537, 'ATP': 40.1101757365074, 'GSH': 0.00309646685192537,
@@ -82,7 +82,7 @@ def kbase_simple():
     :rtype: dict, dict
     """
     reactants = {'GTP': 0.135406821203723, 'L-Aspartate': 0.200830806928348, 'L-Methionine': 0.127801422590767,
-                 'CTP': 0.0841036156544863, 'NAD': 0.00309646685192537, 'fe3': 0.00309646685192537,
+                 'CTP': 0.0841036156544863, 'NAD': 0.00309646685192537, 'Fe3+': 0.00309646685192537,
                  'K+': 0.00309646685192537,
                  'Sulfate': 0.00309646685192537, 'dATP': 0.0145080770930701, 'Ubiquinone-8': 0.00309646685192537,
                  'ACP': 0.00309646685192537, 'Mn2+': 0.00309646685192537, 'ATP': 40.1101757365074,
@@ -149,7 +149,7 @@ def gram_negative():
         'Riboflavin': 0.00778132482043, 'TTP': 0.0146849834202, 'Glycine': 0.510820469745, 'Co2+': 0.00778132482043,
         'L-Lysine': 0.285970236775, 'L-Methionine': 0.128039715997, 'FAD': 0.00778132482043,
         'Bactoprenyl diphosphate': 0.0609084652443, 'dCTP': 0.0146849834202, 'L-Tyrosine': 0.115101904973,
-        'Mn2+': 0.00778132482043, 'L-Aspartate': 0.201205267996, 'fe3': 0.00778132482043,
+        'Mn2+': 0.00778132482043, 'L-Aspartate': 0.201205267996, 'Fe3+': 0.00778132482043,
         'L-Glutamine': 0.219496655995, 'GTP': 0.135406821204, 'NADP': 0.00778132482043,
         'L-Threonine': 0.211466290532, 'L-Proline': 0.184698405655,
     }
@@ -161,7 +161,7 @@ def gram_negative():
     return reactants, products
 
 
-def biomass_equation(biomass_type='standard'):
+def biomass_equation(biomass_type='standard', cpds=None, verbose=False):
     """Get the biomass_equation equation for a specific type of biomass_equation equation.
 
     biomass_type can be one of:
@@ -170,11 +170,25 @@ def biomass_equation(biomass_type='standard'):
         kbase_simple:   a simplified version of the kbase biomass_equation equation
         gram_negative:  a Gram negative biomass_equation equation
 
+    compounds is the compounds set Set[PyFBA.metabolism.Compound] that we use to map to the compounds we
+    extract from the biomass equations. If none, we will use the modelseed compounds
     :param biomass_type: The type of biomass_equation equation to get
     :type biomass_type: str
+    :param cpds: The metabolism compound set that we use to map to the compounds we find
+    :type cpds: Set[PyFBA.metabolism.Compound]
     :return: The biomass_equation equation as a Reaction object
     :rtype: Reaction
     """
+
+    modelseed = None
+
+    if isinstance(cpds, set):
+        modelseed = PyFBA.model_seed.ModelData(compounds=cpds)
+    elif not cpds:
+        modelseed = PyFBA.parse.parse_model_seed_data()
+    else:
+        PyFBA.log_and_message(f"biomass.py can't parse compounds {cpds}", stderr=True)
+        return None
 
     if biomass_type == 'standard':
         reactants, products = standard_eqn()
@@ -189,12 +203,22 @@ def biomass_equation(biomass_type='standard'):
 
     r = Reaction('biomass_equation', 'biomass_equation')
     for i,c in enumerate(reactants):
-        cpd = CompoundWithLocation(f"rctn{i}", c, 'c')
+        cpdname = modelseed.get_compound_by_name(c)
+        if cpdname:
+            cpd = CompoundWithLocation.from_compound(cpdname, 'c')
+        else:
+            PyFBA.log_and_message(f"biomass.py: No compound found for {c} in our compounds dataset", stderr=verbose)
+            cpd = CompoundWithLocation(f"rctn{i}", c, 'c')
         r.add_left_compounds({cpd})
         r.set_left_compound_abundance(cpd, reactants[c])
 
-    for c in products:
-        cpd = CompoundWithLocation(f"rctn{i}", c, 'c')
+    for i,c in enumerate(products):
+        cpdname = modelseed.get_compound_by_name(c)
+        if cpdname:
+            cpd = CompoundWithLocation.from_compound(cpdname, 'c')
+        else:
+            PyFBA.log_and_message(f"biomass.py: No compound found for {c} in our compounds dataset", stderr=verbose)
+            cpd = CompoundWithLocation(f"rctn{i}", c, 'c')
         r.add_right_compounds({cpd})
         r.set_right_compound_abundance(cpd, products[c])
 

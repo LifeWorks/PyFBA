@@ -2,71 +2,59 @@ import os
 import sys
 import re
 
-from PyFBA import MODELSEED_DIR
+import PyFBA
+from PyFBA import log_and_message
 
-def suggest_reactions_using_ec(roles, reactions, reactions2run, rf="SOLRDump/Reactions.tsv", verbose=False):
+
+def suggest_reactions_using_ec(roles, modeldata, reactions2run, maxnumrx=2, verbose=False):
     """
     Identify a set of reactions that you should add to your model for growth based on the EC numbers
     that may be found in the role names.
 
     :param roles: A set of all roles to search for EC numbers.
     :type roles: set
-    :param reactions: our reactions dictionary from parsing the model seed
-    :type reactions: dict
+    :param modeldata: our modeldata datastructure from parsing the seed models
+    :type reactions: PyFBA.model_seed.ModelData
     :param reactions2run: set of reactions that  we are going to run
     :type reactions2run: set
-    :param rf: a reactions file from the SEED
-    :type rf: str
+    :param maxnumrx: Maximum number of reactions per EC to include in the suggestion. Set this to 0 to include
+    everything. This really helps to reduce redundancy from e.g. a dehydrogenase that is in everything.
+    :type maxnumrx: int
     :param verbose: add additional output
     :type verbose: bool
     :return: A set of proposed reactions that should be added to your model to see if it grows
     :rtype: set
     """
 
-    if not os.path.exists(os.path.join(MODELSEED_DIR, rf)):
-        sys.stderr.write("FATAL: The reactions file {} does not exist from the directory {}.".format(rf, MODELSEED_DIR) +
-                         " Please provide a path to that file\n")
-        return set()
-
-    # Read the ModelSEED reactions file
     ec_to_reactions = {}
-    with open(os.path.join(MODELSEED_DIR, rf), "r") as rin:
-        for l in rin:
-            if l.startswith("#") or l.startswith("id"):
-                # Ignore comment lines
-                continue
-            ll = l.strip().split("\t")
-            rxnid = ll[0]
-            ecs = ll[13]
-            # EC number might be null
-            if ecs == "null":
-                continue
-            # Multiple EC numbers can be assigned to a reaction
-            for e in ecs.split(";"):
-                if e not in ec_to_reactions:
-                    ec_to_reactions[e] = set()
-                ec_to_reactions[e].add(rxnid)
+    for r in modeldata.reactions:
+        for e in modeldata.reactions[r].ec_numbers:
+            if e not in ec_to_reactions:
+                ec_to_reactions[e] = set()
+            ec_to_reactions[e].add(r)
+
+    if maxnumrx > 0:
+        temp = {}
+        for e in ec_to_reactions:
+            if len(ec_to_reactions[e]) <= maxnumrx:
+                temp[e] = ec_to_reactions[e]
+        ec_to_reactions = temp
 
     # Find all EC numbers in the list of roles
     suggested_reactions = set()
     for role in roles:
         # Extract each EC number
-        for ec in re.findall("[\d\-]+\.[\d\-]+\.[\d\-]+\.[\d\-]+", role):
+        for ec in re.findall(r"[\d\-]+\.[\d\-]+\.[\d\-]+\.[\d\-]+", role):
             # Check if we know what that EC number is
             if ec in ec_to_reactions:
                 # Check all reactions mapping to that EC number to make sure
                 # we have seen that reaction before
                 for rxnid in ec_to_reactions[ec]:
-                    if rxnid in reactions:
+                    if rxnid in modeldata.reactions:
                         suggested_reactions.add(rxnid)
-
-    if verbose:
-        sys.stderr.write("Found " + str(len(suggested_reactions)) + " reactions\n")
 
     # Remove reactions we already have
     suggested_reactions = suggested_reactions.difference(reactions2run)
-
-    if verbose:
-        sys.stderr.write("Suggesting " + str(len(suggested_reactions)) + " reactions\n")
+    log_and_message(f"Gapfilling by EC number found {len(suggested_reactions)} new reactions", stderr=verbose)
 
     return suggested_reactions
